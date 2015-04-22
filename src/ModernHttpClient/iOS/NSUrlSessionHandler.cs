@@ -49,7 +49,7 @@ namespace ModernHttpClient
             var config = NSUrlSessionConfiguration.DefaultSessionConfiguration;
             config.TimeoutIntervalForRequest = 1000;
             config.TimeoutIntervalForResource = 1000;
-            config.URLCache = null;
+            config.URLCache = new NSUrlCache (0, 0, "HttpClientCache");
             session = NSUrlSession.FromConfiguration(
                 config, 
                 new DataTaskDelegate(this), null);
