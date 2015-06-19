@@ -30,12 +30,22 @@ namespace ModernHttpClient
 
         public bool DisableCaching { get; set; }
 
+        public new bool AllowAutoRedirect { 
+            get {
+                return client.FollowRedirects;
+            }
+            set {
+                client.FollowRedirects = value;
+            }
+        }
+
         public NativeMessageHandler() : this(false, false) {}
 
         public NativeMessageHandler(bool throwOnCaptiveNetwork, bool customSSLVerification, NativeCookieHandler cookieHandler = null)
         {
             this.throwOnCaptiveNetwork = throwOnCaptiveNetwork;
 
+            var foo = client.HostnameVerifier;
             if (customSSLVerification) client.SetHostnameVerifier(new HostnameVerifier());
             noCacheCacheControl = (new CacheControl.Builder()).NoCache().Build();
         }
@@ -82,6 +92,14 @@ namespace ModernHttpClient
             var java_uri = request.RequestUri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
             var url = new Java.Net.URL(java_uri);
 
+            if (null != Credentials) {
+                var specifedCredential = Credentials.GetCredential (new Uri (java_uri), "Basic");
+                if (null != specifedCredential) {
+                    var credString = OkHttp.Credentials.Basic (specifedCredential.UserName, specifedCredential.Password);
+                    var authenticator = new NativeAuthenticator (credString);
+                    client.SetAuthenticator (authenticator);
+                }
+            }
             var body = default(RequestBody);
             if (request.Content != null) {
                 var bytes = await request.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
@@ -118,7 +136,9 @@ namespace ModernHttpClient
 
             var resp = default(Response);
             try {
+                System.Console.WriteLine ("SendAsync:BEFORE AWAIT");
                 resp = await call.EnqueueAsync().ConfigureAwait(false);
+                System.Console.WriteLine ("SendAsync:AFTER AWAIT");
                 var newReq = resp.Request();
                 var newUri = newReq == null ? null : newReq.Uri();
                 request.RequestUri = new Uri(newUri.ToString());
@@ -127,14 +147,15 @@ namespace ModernHttpClient
                         throw new CaptiveNetworkException(new Uri(java_uri), new Uri(newUri.ToString()));
                     }
                 }
+            } catch (Java.Net.UnknownHostException ex) {
+                throw new WebException (ex.ToString (), WebExceptionStatus.NameResolutionFailure);
             } catch (IOException ex) {
-                if (ex.Message.ToLowerInvariant().Contains("canceled")) {
-                    throw new OperationCanceledException();
+                if (ex.Message.ToLowerInvariant ().Contains ("canceled")) {
+                    System.Console.WriteLine ("SendAsync:Cancelled");
+                    throw new OperationCanceledException ();
                 }
-
                 throw;
             }
-
             var respBody = resp.Body();
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -177,6 +198,7 @@ namespace ModernHttpClient
 
             public void OnFailure(Request p0, Java.IO.IOException p1)
             {
+                System.Console.WriteLine ("OnFailure");
                 // Kind of a hack, but the simplest way to find out that server cert. validation failed
                 if (p1.Message == String.Format("Hostname '{0}' was not verified", p0.Url().Host)) {
                     tcs.TrySetException(new WebException(p1.LocalizedMessage, WebExceptionStatus.TrustFailure));
@@ -187,6 +209,7 @@ namespace ModernHttpClient
 
             public void OnResponse(Response p0)
             {
+                System.Console.WriteLine ("OnResponse");
                 tcs.TrySetResult(p0);
             }
         }
@@ -195,6 +218,11 @@ namespace ModernHttpClient
     class HostnameVerifier : Java.Lang.Object, IHostnameVerifier
     {
         static readonly Regex cnRegex = new Regex(@"CN\s*=\s*([^,]*)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+        public bool Verify(String urlHostname, String certHostname)
+        {
+            return true;
+        }
 
         public bool Verify(string hostname, ISSLSession session)
         {
@@ -277,6 +305,26 @@ namespace ModernHttpClient
             var acceptedCiphers = callback(protocol, new[] { session.CipherSuite });
 
             return acceptedCiphers.Contains(session.CipherSuite);
+        }
+    }
+
+    class NativeAuthenticator : Java.Lang.Object, IAuthenticator
+    {
+        private string CredString;
+
+        public NativeAuthenticator (string credString)
+        {
+            CredString = credString;
+        }
+
+        public Request Authenticate (Java.Net.Proxy proxy, Response response)
+        {
+            return response.Request ().NewBuilder ().Header ("Authorization", CredString).Build ();
+        }
+
+        public Request AuthenticateProxy (Java.Net.Proxy proxy, Response response)
+        {
+            return null;
         }
     }
 }
