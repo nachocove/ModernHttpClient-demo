@@ -4,40 +4,40 @@
 // actions made in the UI designer. If it is removed, they will be lost.
 // Manual changes to this file may not be handled correctly.
 //
-using MonoTouch.Foundation;
+using Foundation;
 using System.CodeDom.Compiler;
 
 namespace Playground.iOS
 {
-	[Register ("Playground_iOSViewController")]
-	partial class Playground_iOSViewController
-	{
+    [Register ("Playground_iOSViewController")]
+    partial class Playground_iOSViewController
+    {
         [Outlet]
-        MonoTouch.UIKit.UIProgressView progress { get; set; }
+        UIKit.UIProgressView progress { get; set; }
 
-		[Outlet]
-		MonoTouch.UIKit.UILabel md5sum { get; set; }
+        [Outlet]
+        UIKit.UILabel md5sum { get; set; }
 
-		[Outlet]
-		MonoTouch.UIKit.UITextView result { get; set; }
+        [Outlet]
+        UIKit.UITextView result { get; set; }
 
-		[Action ("cancelIt:")]
-		partial void cancelIt (MonoTouch.Foundation.NSObject sender);
+        [Action ("cancelIt:")]
+        partial void cancelIt (Foundation.NSObject sender);
 
-		[Action ("doIt:")]
-		partial void doIt (MonoTouch.Foundation.NSObject sender);
-		
-		void ReleaseDesignerOutlets ()
-		{
-			if (result != null) {
-				result.Dispose ();
-				result = null;
-			}
+        [Action ("doIt:")]
+        partial void doIt (Foundation.NSObject sender);
+        
+        void ReleaseDesignerOutlets ()
+        {
+            if (result != null) {
+                result.Dispose ();
+                result = null;
+            }
 
-			if (md5sum != null) {
-				md5sum.Dispose ();
-				md5sum = null;
-			}
-		}
-	}
+            if (md5sum != null) {
+                md5sum.Dispose ();
+                md5sum = null;
+            }
+        }
+    }
 }
