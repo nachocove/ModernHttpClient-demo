@@ -213,11 +213,6 @@ namespace ModernHttpClient
     {
         static readonly Regex cnRegex = new Regex(@"CN\s*=\s*([^,]*)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Singleline);
 
-        public bool Verify(String urlHostname, String certHostname)
-        {
-            return true;
-        }
-
         public bool Verify(string hostname, ISSLSession session)
         {
             return verifyServerCertificate(hostname, session) & verifyClientCiphers(hostname, session);
