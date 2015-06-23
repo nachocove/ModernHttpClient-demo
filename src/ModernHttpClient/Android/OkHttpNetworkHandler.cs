@@ -45,7 +45,6 @@ namespace ModernHttpClient
         {
             this.throwOnCaptiveNetwork = throwOnCaptiveNetwork;
 
-            var foo = client.HostnameVerifier;
             if (customSSLVerification) client.SetHostnameVerifier(new HostnameVerifier());
             noCacheCacheControl = (new CacheControl.Builder()).NoCache().Build();
         }
@@ -136,9 +135,7 @@ namespace ModernHttpClient
 
             var resp = default(Response);
             try {
-                System.Console.WriteLine ("SendAsync:BEFORE AWAIT");
                 resp = await call.EnqueueAsync().ConfigureAwait(false);
-                System.Console.WriteLine ("SendAsync:AFTER AWAIT");
                 var newReq = resp.Request();
                 var newUri = newReq == null ? null : newReq.Uri();
                 request.RequestUri = new Uri(newUri.ToString());
@@ -151,7 +148,6 @@ namespace ModernHttpClient
                 throw new WebException (ex.ToString (), WebExceptionStatus.NameResolutionFailure);
             } catch (IOException ex) {
                 if (ex.Message.ToLowerInvariant ().Contains ("canceled")) {
-                    System.Console.WriteLine ("SendAsync:Cancelled");
                     throw new OperationCanceledException ();
                 }
                 throw;
@@ -198,7 +194,6 @@ namespace ModernHttpClient
 
             public void OnFailure(Request p0, Java.IO.IOException p1)
             {
-                System.Console.WriteLine ("OnFailure");
                 // Kind of a hack, but the simplest way to find out that server cert. validation failed
                 if (p1.Message == String.Format("Hostname '{0}' was not verified", p0.Url().Host)) {
                     tcs.TrySetException(new WebException(p1.LocalizedMessage, WebExceptionStatus.TrustFailure));
@@ -209,7 +204,6 @@ namespace ModernHttpClient
 
             public void OnResponse(Response p0)
             {
-                System.Console.WriteLine ("OnResponse");
                 tcs.TrySetResult(p0);
             }
         }
