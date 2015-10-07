@@ -285,7 +285,13 @@ namespace ModernHttpClient
                 chain.ChainPolicy.UrlRetrievalTimeout = new TimeSpan(0, 1, 0);
                 chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
 
-                if (!chain.Build(root)) {
+                try {
+                    if (!chain.Build(root)) {
+                        errors = SslPolicyErrors.RemoteCertificateChainErrors;
+                        goto sslErrorVerify;
+                    }
+                } catch (System.Security.Cryptography.CryptographicException) {
+                    // As best we can tell, a XAMMIT (spurious).
                     errors = SslPolicyErrors.RemoteCertificateChainErrors;
                     goto sslErrorVerify;
                 }
