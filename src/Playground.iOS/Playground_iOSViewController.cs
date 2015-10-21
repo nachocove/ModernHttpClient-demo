@@ -1,7 +1,7 @@
 using System;
-using System.Drawing;
-using MonoTouch.Foundation;
-using MonoTouch.UIKit;
+using CoreGraphics;
+using Foundation;
+using UIKit;
 using System.Net.Http;
 using System.Threading;
 using System.Diagnostics;
@@ -54,7 +54,7 @@ namespace Playground.iOS
         CancellationTokenSource currentToken;
         HttpResponseMessage resp;
 
-        partial void cancelIt (MonoTouch.Foundation.NSObject sender)
+        partial void cancelIt (Foundation.NSObject sender)
         {
             this.currentToken.Cancel();
             if (resp != null) resp.Content.Dispose();
@@ -70,7 +70,7 @@ namespace Playground.iOS
             });
         }
 
-        async partial void doIt (MonoTouch.Foundation.NSObject sender)
+        async partial void doIt (Foundation.NSObject sender)
         {
             var handler = new NativeMessageHandler();
             var client = new HttpClient(handler);
@@ -80,8 +80,9 @@ namespace Playground.iOS
 
             st.Start();
             try {
-                var url = "https://github.com/paulcbetts/ModernHttpClient/releases/download/0.9.0/ModernHttpClient-0.9.zip";
-                //var url = "https://github.com/downloads/nadlabak/android/cm-9.1.0a-umts_sholes.zip";
+                handler.DisableCaching = true;
+                //var url = "https://github.com/paulcbetts/ModernHttpClient/releases/download/0.9.0/ModernHttpClient-0.9.zip";
+                var url = "https://github.com/downloads/nadlabak/android/cm-9.1.0a-umts_sholes.zip";
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 handler.RegisterForProgress(request, HandleDownloadProgress);
@@ -130,4 +131,3 @@ namespace Playground.iOS
         }
     }
 }
-

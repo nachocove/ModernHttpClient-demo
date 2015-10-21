@@ -18,18 +18,35 @@ namespace ModernHttpClient
     public class NativeMessageHandler : HttpClientHandler
     {
         readonly OkHttpClient client = new OkHttpClient();
+        readonly CacheControl noCacheCacheControl = default(CacheControl);
         readonly bool throwOnCaptiveNetwork;
 
         readonly Dictionary<HttpRequestMessage, WeakReference> registeredProgressCallbacks =
             new Dictionary<HttpRequestMessage, WeakReference>();
+        readonly Dictionary<string, string> headerSeparators = 
+            new Dictionary<string,string>(){ 
+                {"User-Agent", " "}
+            };
+
+        public bool DisableCaching { get; set; }
+
+        public new bool AllowAutoRedirect { 
+            get {
+                return client.FollowRedirects;
+            }
+            set {
+                client.FollowRedirects = value;
+            }
+        }
 
         public NativeMessageHandler() : this(false, false) {}
 
-        public NativeMessageHandler(bool throwOnCaptiveNetwork, bool customSSLVerification)
+        public NativeMessageHandler(bool throwOnCaptiveNetwork, bool customSSLVerification, NativeCookieHandler cookieHandler = null)
         {
             this.throwOnCaptiveNetwork = throwOnCaptiveNetwork;
 
             if (customSSLVerification) client.SetHostnameVerifier(new HostnameVerifier());
+            noCacheCacheControl = (new CacheControl.Builder()).NoCache().Build();
         }
 
         public void RegisterForProgress(HttpRequestMessage request, ProgressDelegate callback)
@@ -60,16 +77,36 @@ namespace ModernHttpClient
             }
         }
 
+        string getHeaderSeparator(string name)
+        {
+            if (headerSeparators.ContainsKey(name)) {
+                return headerSeparators[name];
+            }
+
+            return ",";
+        }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var java_uri = request.RequestUri.GetComponents(UriComponents.AbsoluteUri, UriFormat.UriEscaped);
             var url = new Java.Net.URL(java_uri);
 
+            if (null != Credentials) {
+                var specifedCredential = Credentials.GetCredential (new Uri (java_uri), "Basic");
+                if (null != specifedCredential) {
+                    var credString = OkHttp.Credentials.Basic (specifedCredential.UserName, specifedCredential.Password);
+                    var authenticator = new NativeAuthenticator (credString);
+                    client.SetAuthenticator (authenticator);
+                }
+            }
             var body = default(RequestBody);
             if (request.Content != null) {
                 var bytes = await request.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 
-                var contentType = String.Join (" ", request.Content.Headers.GetValues ("Content-Type"));
+                var contentType = "text/plain";
+                if (request.Content.Headers.ContentType != null) {
+                    contentType = String.Join(" ", request.Content.Headers.GetValues("Content-Type"));
+                }
                 body = RequestBody.Create(MediaType.Parse(contentType), bytes);
             }
 
@@ -77,12 +114,16 @@ namespace ModernHttpClient
                 .Method(request.Method.Method.ToUpperInvariant(), body)
                 .Url(url);
 
+            if (DisableCaching) {
+                builder.CacheControl(noCacheCacheControl);
+            }
+
             var keyValuePairs = request.Headers
                 .Union(request.Content != null ?
                     (IEnumerable<KeyValuePair<string, IEnumerable<string>>>)request.Content.Headers :
                     Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>());
 
-            foreach (var kvp in keyValuePairs) builder.AddHeader(kvp.Key, String.Join(",", kvp.Value));
+            foreach (var kvp in keyValuePairs) builder.AddHeader(kvp.Key, String.Join(getHeaderSeparator(kvp.Key), kvp.Value));
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -97,27 +138,29 @@ namespace ModernHttpClient
                 resp = await call.EnqueueAsync().ConfigureAwait(false);
                 var newReq = resp.Request();
                 var newUri = newReq == null ? null : newReq.Uri();
+                request.RequestUri = new Uri(newUri.ToString());
                 if (throwOnCaptiveNetwork && newUri != null) {
                     if (url.Host != newUri.Host) {
                         throw new CaptiveNetworkException(new Uri(java_uri), new Uri(newUri.ToString()));
                     }
                 }
+            } catch (Java.Net.UnknownHostException ex) {
+                throw new WebException (ex.ToString (), WebExceptionStatus.NameResolutionFailure);
             } catch (IOException ex) {
-                if (ex.Message.ToLowerInvariant().Contains("canceled")) {
-                    throw new OperationCanceledException();
+                if (ex.Message.ToLowerInvariant ().Contains ("canceled")) {
+                    throw new OperationCanceledException ();
                 }
-
                 throw;
             }
-
             var respBody = resp.Body();
 
             cancellationToken.ThrowIfCancellationRequested();
 
             var ret = new HttpResponseMessage((HttpStatusCode)resp.Code());
+            ret.RequestMessage = request;
             ret.ReasonPhrase = resp.Message();
             if (respBody != null) {
-                var content = new ProgressStreamContent(respBody.ByteStream(), cancellationToken);
+                var content = new ProgressStreamContent(respBody.ByteStream(), CancellationToken.None);
                 content.Progress = getAndRemoveCallbackFromRegister(request);
                 ret.Content = content;
             } else {
@@ -182,7 +225,7 @@ namespace ModernHttpClient
         /// <returns><c>true</c>, if server certificate was verifyed, <c>false</c> otherwise.</returns>
         /// <param name="hostname"></param>
         /// <param name="session"></param>
-        bool verifyServerCertificate(string hostname, ISSLSession session)
+        static bool verifyServerCertificate(string hostname, ISSLSession session)
         {
             var defaultVerifier = HttpsURLConnection.DefaultHostnameVerifier;
 
@@ -190,8 +233,8 @@ namespace ModernHttpClient
 
             // Convert java certificates to .NET certificates and build cert chain from root certificate
             var certificates = session.GetPeerCertificateChain();
-            var chain = new System.Security.Cryptography.X509Certificates.X509Chain();
-            System.Security.Cryptography.X509Certificates.X509Certificate2 root = null;
+            var chain = new X509Chain();
+            X509Certificate2 root = null;
             var errors = System.Net.Security.SslPolicyErrors.None;
 
             // Build certificate chain and check for errors
@@ -205,7 +248,7 @@ namespace ModernHttpClient
                 goto bail;
             } 
 
-            var netCerts = certificates.Select(x => new System.Security.Cryptography.X509Certificates.X509Certificate2(x.GetEncoded())).ToArray();
+            var netCerts = certificates.Select(x => new X509Certificate2(x.GetEncoded())).ToArray();
 
             for (int i = 1; i < netCerts.Length; i++) {
                 chain.ChainPolicy.ExtraStore.Add(netCerts[i]);
@@ -213,11 +256,10 @@ namespace ModernHttpClient
 
             root = netCerts[0];
 
-            chain.ChainPolicy.RevocationFlag = System.Security.Cryptography.X509Certificates.X509RevocationFlag.EntireChain;
-            chain.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.EntireChain;
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
             chain.ChainPolicy.UrlRetrievalTimeout = new TimeSpan(0, 1, 0);
-            chain.ChainPolicy.VerificationFlags = 
-                    System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllowUnknownCertificateAuthority;
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
 
             if (!chain.Build(root)) {
                 errors = System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors;
@@ -234,7 +276,7 @@ namespace ModernHttpClient
 
         bail:
             // Call the delegate to validate
-            return ServicePointManager.ServerCertificateValidationCallback(this, root, chain, errors);
+            return ServicePointManager.ServerCertificateValidationCallback(hostname, root, chain, errors);
         }
 
         /// <summary>
@@ -243,7 +285,7 @@ namespace ModernHttpClient
         /// <returns><c>true</c>, if client ciphers was verifyed, <c>false</c> otherwise.</returns>
         /// <param name="hostname"></param>
         /// <param name="session"></param>
-        bool verifyClientCiphers(string hostname, ISSLSession session)
+        static bool verifyClientCiphers(string hostname, ISSLSession session)
         {
             var callback = ServicePointManager.ClientCipherSuitesCallback;
             if (callback == null) return true;
@@ -252,6 +294,26 @@ namespace ModernHttpClient
             var acceptedCiphers = callback(protocol, new[] { session.CipherSuite });
 
             return acceptedCiphers.Contains(session.CipherSuite);
+        }
+    }
+
+    class NativeAuthenticator : Java.Lang.Object, IAuthenticator
+    {
+        private string CredString;
+
+        public NativeAuthenticator (string credString)
+        {
+            CredString = credString;
+        }
+
+        public Request Authenticate (Java.Net.Proxy proxy, Response response)
+        {
+            return response.Request ().NewBuilder ().Header ("Authorization", CredString).Build ();
+        }
+
+        public Request AuthenticateProxy (Java.Net.Proxy proxy, Response response)
+        {
+            return null;
         }
     }
 }

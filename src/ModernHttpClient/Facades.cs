@@ -1,13 +1,19 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Threading;
 using System.IO;
+using System.Net;
 
 namespace ModernHttpClient
 {
     public class NativeMessageHandler : HttpClientHandler
     {
+        const string wrongVersion = "You're referencing the Portable version in your App - you need to reference the platform (iOS/Android) version";
+
+        public bool DisableCaching { get; set; }
+
         /// <summary>
         /// Initializes a new instance of the <see
         /// cref="ModernHttpClient.Portable.NativeMessageHandler"/> class.
@@ -28,13 +34,15 @@ namespace ModernHttpClient
         /// verification via ServicePointManager. Disabled by default for 
         /// performance reasons (i.e. the OS default certificate verification 
         /// will take place)</param>
-        public NativeMessageHandler(bool throwOnCaptiveNetwork, bool customSSLVerification) : base()
+        /// <param name="cookieHandler">Enable native cookie handling.
+        /// </param>
+        public NativeMessageHandler(bool throwOnCaptiveNetwork, bool customSSLVerification, NativeCookieHandler cookieHandler = null) : base()
         {
         }
 
-        [Obsolete("You're using NativeMessageHandler on an unsupported platform or are ref'ing the wrong DLL. This method will do nothing!")]
         public void RegisterForProgress(HttpRequestMessage request, ProgressDelegate callback)
         {
+            throw new Exception(wrongVersion);
         }
     }
 
@@ -59,4 +67,18 @@ namespace ModernHttpClient
     }
 
     public delegate void ProgressDelegate(long bytes, long totalBytes, long totalBytesExpected);
+
+    public class NativeCookieHandler
+    {
+        const string wrongVersion = "You're referencing the Portable version in your App - you need to reference the platform (iOS/Android) version";
+
+        public void SetCookies(IEnumerable<Cookie> cookies)
+        {
+            throw new Exception(wrongVersion);
+        }
+
+        public List<Cookie> Cookies {
+            get { throw new Exception(wrongVersion); }
+        }
+    }
 }
